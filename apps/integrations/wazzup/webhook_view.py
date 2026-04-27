@@ -7,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from apps.salons.models import Salon
 from apps.integrations.wazzup.handler import WazzupHandler
 
@@ -14,6 +15,9 @@ logger = structlog.get_logger(__name__)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(
+    ratelimit(key="ip", rate="100/m", method="POST", block=True), name="dispatch"
+)
 class WazzupWebhookView(View):
     def post(self, request, salon_id: int):
         try:
@@ -22,6 +26,10 @@ class WazzupWebhookView(View):
             return HttpResponse(status=404)
 
         # HMAC SHA256 validation
+        if not salon.wazzup_api_key:
+            logger.warning("wazzup_api_key_not_configured", salon_id=salon_id)
+            return HttpResponse(status=401)
+
         signature = request.headers.get("X-Wazzup-Signature", "")
         body = request.body
         expected = hmac.new(

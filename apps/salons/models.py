@@ -1,5 +1,5 @@
 from django.db import models
-from django_cryptography.fields import encrypt
+from apps.salons.fields import EncryptedCharField
 
 
 class Salon(models.Model):
@@ -10,16 +10,18 @@ class Salon(models.Model):
 
     # YCLIENTS
     yclients_company_id = models.IntegerField(null=True, blank=True)
-    yclients_user_token = encrypt(models.CharField(max_length=200, null=True, blank=True))
-    yclients_partner_token = encrypt(models.CharField(max_length=200, null=True, blank=True))
+    yclients_user_token = EncryptedCharField(null=True, blank=True)
+    yclients_partner_token = EncryptedCharField(null=True, blank=True)
 
     # Channels
-    telegram_bot_token = encrypt(models.CharField(max_length=200, null=True, blank=True))
+    telegram_bot_token = EncryptedCharField(null=True, blank=True)
     telegram_bot_username = models.CharField(max_length=100, null=True, blank=True)
-    max_bot_token = encrypt(models.CharField(max_length=200, null=True, blank=True))
-    wazzup_api_key = encrypt(models.CharField(max_length=200, null=True, blank=True))
+    max_bot_token = EncryptedCharField(null=True, blank=True)
+    wazzup_api_key = EncryptedCharField(null=True, blank=True)
     wazzup_channel_id_whatsapp = models.CharField(max_length=100, null=True, blank=True)
-    wazzup_channel_id_instagram = models.CharField(max_length=100, null=True, blank=True)
+    wazzup_channel_id_instagram = models.CharField(
+        max_length=100, null=True, blank=True
+    )
 
     # AI settings
     system_prompt_override = models.TextField(blank=True)

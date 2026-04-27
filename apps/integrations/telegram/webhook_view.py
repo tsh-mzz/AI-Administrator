@@ -5,6 +5,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from apps.salons.models import Salon
 from apps.integrations.telegram.handler import TelegramHandler
 
@@ -12,6 +13,9 @@ logger = structlog.get_logger(__name__)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(
+    ratelimit(key="ip", rate="100/m", method="POST", block=True), name="dispatch"
+)
 class TelegramWebhookView(View):
     """
     URL: /webhooks/telegram/<salon_id>/
@@ -45,5 +49,6 @@ class TelegramWebhookView(View):
 def _get_webhook_secret(salon) -> str:
     """Derive per-salon webhook secret from bot token hash."""
     import hashlib
+
     token = salon.telegram_bot_token or ""
     return hashlib.sha256(token.encode()).hexdigest()[:32]
