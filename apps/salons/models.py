@@ -33,11 +33,11 @@ class Salon(models.Model):
 
     # AI settings
     system_prompt_override = models.TextField(blank=True)
-    ai_model = models.CharField(max_length=50, default="claude-sonnet-4-6")
+    ai_model = models.CharField(max_length=50, default="llama-3.3-70b-versatile")
 
     # Operational
     admin_telegram_id = models.CharField(max_length=50, null=True, blank=True)
-    working_hours_json = models.JSONField(default=dict)
+    working_hours_json = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

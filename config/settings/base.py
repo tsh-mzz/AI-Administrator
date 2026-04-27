@@ -126,6 +126,7 @@ QDRANT_COLLECTION = env("QDRANT_COLLECTION", default="knowledge")
 # AI
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+GROQ_API_KEY = env("GROQ_API_KEY", default="")
 
 # Encryption
 FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")

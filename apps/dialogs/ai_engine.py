@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 
-import anthropic
+import openai
 import structlog
 from django.conf import settings
 
@@ -12,9 +12,8 @@ from .tools import execute_tool, get_tools_for_salon
 
 logger = structlog.get_logger(__name__)
 
-# Cost per 1M tokens (USD) for claude-sonnet-4-6
-_COST_INPUT_PER_M = Decimal("3.00")
-_COST_OUTPUT_PER_M = Decimal("15.00")
+_COST_INPUT_PER_M = Decimal("0.00")
+_COST_OUTPUT_PER_M = Decimal("0.00")
 
 
 @dataclass
@@ -27,8 +26,11 @@ class AIResponse:
     escalate: bool = False
 
 
-def _get_client() -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+def _get_client() -> openai.AsyncOpenAI:
+    return openai.AsyncOpenAI(
+        api_key=settings.GROQ_API_KEY,
+        base_url="https://api.groq.com/openai/v1",
+    )
 
 
 def _calculate_cost(tokens_input: int, tokens_output: int) -> Decimal:
@@ -38,8 +40,23 @@ def _calculate_cost(tokens_input: int, tokens_output: int) -> Decimal:
     )
 
 
+def _to_openai_tools(tools: list) -> list:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t.get(
+                    "input_schema", {"type": "object", "properties": {}}
+                ),
+            },
+        }
+        for t in tools
+    ]
+
+
 async def _load_conversation_history(conversation) -> list[dict]:
-    """Load last 20 messages and format for Claude."""
     from .models import Message
 
     messages = []
@@ -54,12 +71,23 @@ async def _load_conversation_history(conversation) -> list[dict]:
 
     history = []
     for msg in messages:
-        if msg.role == "tool":
-            continue
         if msg.tool_calls_json:
-            history.append({"role": "assistant", "content": msg.tool_calls_json})
+            history.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content or None,
+                    "tool_calls": msg.tool_calls_json,
+                }
+            )
         elif msg.tool_results_json:
-            history.append({"role": "user", "content": msg.tool_results_json})
+            for r in msg.tool_results_json:
+                history.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": r["tool_call_id"],
+                        "content": r["content"],
+                    }
+                )
         else:
             history.append({"role": msg.role, "content": msg.content})
 
@@ -85,18 +113,15 @@ async def _save_user_message(conversation, text: str) -> None:
     )
 
 
-async def _save_tool_turn(conversation, tool_calls_content, tool_results: list) -> None:
+async def _save_tool_turn(conversation, tool_calls: list, tool_results: list) -> None:
     from .models import Message
 
-    serialized = [
-        b if isinstance(b, dict) else b.model_dump() for b in tool_calls_content
-    ]
     await Message.objects.acreate(
         conversation=conversation,
         direction="out",
         role="assistant",
         content="",
-        tool_calls_json=serialized,
+        tool_calls_json=tool_calls,
     )
     await Message.objects.acreate(
         conversation=conversation,
@@ -131,40 +156,40 @@ async def _run_agent_loop(
     max_iterations: int = 5,
 ) -> AIResponse:
     client = _get_client()
+    openai_tools = _to_openai_tools(tools)
     total_input = 0
     total_output = 0
     start = time.monotonic()
 
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
+
     for iteration in range(max_iterations):
-        api_response = await client.messages.create(
+        api_response = await client.chat.completions.create(
             model=salon.ai_model,
-            system=system_prompt,
-            messages=messages,
-            tools=tools,
+            messages=full_messages,
+            tools=openai_tools,
             max_tokens=1024,
         )
 
-        total_input += api_response.usage.input_tokens
-        total_output += api_response.usage.output_tokens
+        usage = api_response.usage
+        if usage:
+            total_input += usage.prompt_tokens
+            total_output += usage.completion_tokens
+
+        choice = api_response.choices[0]
+        finish_reason = choice.finish_reason
 
         logger.info(
             "llm_call",
             salon_id=salon.id,
             iteration=iteration,
-            stop_reason=api_response.stop_reason,
-            input_tokens=api_response.usage.input_tokens,
-            output_tokens=api_response.usage.output_tokens,
+            finish_reason=finish_reason,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
         )
 
-        if api_response.stop_reason == "end_turn":
-            text = next(
-                (
-                    block.text
-                    for block in api_response.content
-                    if hasattr(block, "text")
-                ),
-                "Извините, не могу ответить прямо сейчас.",
-            )
+        if finish_reason == "stop":
+            text = choice.message.content or "Извините, не могу ответить прямо сейчас."
             latency = int((time.monotonic() - start) * 1000)
             return AIResponse(
                 text=text,
@@ -174,27 +199,53 @@ async def _run_agent_loop(
                 latency_ms=latency,
             )
 
-        if api_response.stop_reason == "tool_use":
+        if finish_reason == "tool_calls":
+            tool_calls = choice.message.tool_calls
             tool_results = []
-            for block in api_response.content:
-                if block.type == "tool_use":
-                    result = await execute_tool(
-                        tool_name=block.name,
-                        tool_input=block.input,
-                        salon=salon,
-                        conversation=conversation,
-                    )
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": json.dumps(result, ensure_ascii=False),
-                        }
-                    )
+            serialized_calls = []
 
-            messages.append({"role": "assistant", "content": api_response.content})
-            messages.append({"role": "user", "content": tool_results})
-            await _save_tool_turn(conversation, api_response.content, tool_results)
+            for tc in tool_calls:
+                tool_input = json.loads(tc.function.arguments)
+                result = await execute_tool(
+                    tool_name=tc.function.name,
+                    tool_input=tool_input,
+                    salon=salon,
+                    conversation=conversation,
+                )
+                tool_results.append(
+                    {
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+                serialized_calls.append(
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                )
+
+            full_messages.append(
+                {
+                    "role": "assistant",
+                    "content": choice.message.content,
+                    "tool_calls": [tc.model_dump() for tc in tool_calls],
+                }
+            )
+            for tr in tool_results:
+                full_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tr["tool_call_id"],
+                        "content": tr["content"],
+                    }
+                )
+
+            await _save_tool_turn(conversation, serialized_calls, tool_results)
             continue
 
         break
@@ -211,7 +262,6 @@ async def _run_agent_loop(
 
 
 async def process_incoming_message(conversation, user_message: str) -> AIResponse:
-    """Main entry point: process one user message and return bot reply."""
     salon = await conversation.salon.__class__.objects.aget(pk=conversation.salon_id)
 
     history = await _load_conversation_history(conversation)
