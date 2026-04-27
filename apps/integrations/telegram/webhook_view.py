@@ -1,6 +1,7 @@
+import hmac
 import json
-import asyncio
 import structlog
+from asgiref.sync import async_to_sync
 from django.http import JsonResponse, HttpResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
@@ -23,15 +24,17 @@ class TelegramWebhookView(View):
     """
 
     def post(self, request, salon_id: int):
-        # Validate secret token set when registering webhook
         secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if not secret:
+            return HttpResponse(status=401)
+
         try:
             salon = Salon.objects.get(pk=salon_id, is_active=True)
         except Salon.DoesNotExist:
-            return HttpResponse(status=404)
+            return HttpResponse(status=401)
 
         expected_secret = _get_webhook_secret(salon)
-        if not secret or secret != expected_secret:
+        if not hmac.compare_digest(secret, expected_secret):
             logger.warning("telegram_webhook_invalid_secret", salon_id=salon_id)
             return HttpResponse(status=401)
 
@@ -41,7 +44,7 @@ class TelegramWebhookView(View):
             return HttpResponse(status=400)
 
         handler = TelegramHandler()
-        asyncio.run(handler.handle_incoming_update(update=update, salon=salon))
+        async_to_sync(handler.handle_incoming_update)(update=update, salon=salon)
 
         return JsonResponse({"ok": True})
 

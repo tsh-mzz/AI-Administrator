@@ -1,8 +1,8 @@
-import asyncio
 import hashlib
 import hmac
 import json
 import structlog
+from asgiref.sync import async_to_sync
 from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
@@ -41,7 +41,11 @@ class WazzupWebhookView(View):
             logger.warning("wazzup_invalid_signature", salon_id=salon_id)
             return HttpResponse(status=401)
 
-        update = json.loads(body)
+        try:
+            update = json.loads(body)
+        except json.JSONDecodeError:
+            return HttpResponse(status=400)
+
         handler = WazzupHandler()
-        asyncio.run(handler.handle_incoming_update(update=update, salon=salon))
+        async_to_sync(handler.handle_incoming_update)(update=update, salon=salon)
         return JsonResponse({"ok": True})

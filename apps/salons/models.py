@@ -1,9 +1,17 @@
+from django.conf import settings
 from django.db import models
 from apps.salons.fields import EncryptedCharField
 
 
 class Salon(models.Model):
     name = models.CharField(max_length=200)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="salons",
+    )
     address = models.CharField(max_length=500)
     phone = models.CharField(max_length=20)
     timezone = models.CharField(max_length=50, default="Europe/Moscow")

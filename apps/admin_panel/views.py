@@ -1,7 +1,7 @@
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from datetime import timedelta
 
 from apps.salons.models import Salon
 from apps.dialogs.models import Conversation, Message
@@ -9,7 +9,10 @@ from apps.knowledge_base.models import KnowledgeDocument
 
 
 def _get_salon_or_403(request, salon_id: int) -> Salon:
-    return get_object_or_404(Salon, pk=salon_id, is_active=True)
+    salon = get_object_or_404(Salon, pk=salon_id, is_active=True)
+    if not request.user.is_superuser and salon.owner != request.user:
+        raise PermissionDenied
+    return salon
 
 
 @login_required
@@ -24,7 +27,9 @@ def dashboard(request, salon_id: int):
         ).count(),
         "bookings_total": Conversation.objects.filter(
             salon=salon, messages__tool_calls_json__icontains="create_booking"
-        ).distinct().count(),
+        )
+        .distinct()
+        .count(),
         "escalations_open": Conversation.objects.filter(
             salon=salon, status="handed_to_admin"
         ).count(),
@@ -32,7 +37,9 @@ def dashboard(request, salon_id: int):
             salon=salon, status="active"
         ).count(),
     }
-    return render(request, "admin_panel/dashboard.html", {"salon": salon, "stats": stats})
+    return render(
+        request, "admin_panel/dashboard.html", {"salon": salon, "stats": stats}
+    )
 
 
 @login_required
@@ -47,7 +54,9 @@ def dialogs_list(request, salon_id: int):
     if status:
         qs = qs.filter(status=status)
 
-    return render(request, "admin_panel/dialogs.html", {"salon": salon, "conversations": qs})
+    return render(
+        request, "admin_panel/dialogs.html", {"salon": salon, "conversations": qs}
+    )
 
 
 @login_required
@@ -55,11 +64,15 @@ def dialog_detail(request, salon_id: int, conversation_id: int):
     salon = _get_salon_or_403(request, salon_id)
     conversation = get_object_or_404(Conversation, pk=conversation_id, salon=salon)
     messages = conversation.messages.order_by("created_at")
-    return render(request, "admin_panel/dialog_detail.html", {
-        "salon": salon,
-        "conversation": conversation,
-        "messages": messages,
-    })
+    return render(
+        request,
+        "admin_panel/dialog_detail.html",
+        {
+            "salon": salon,
+            "conversation": conversation,
+            "messages": messages,
+        },
+    )
 
 
 @login_required
@@ -72,8 +85,14 @@ def knowledge_list(request, salon_id: int):
 @login_required
 def escalations(request, salon_id: int):
     salon = _get_salon_or_403(request, salon_id)
-    convs = Conversation.objects.filter(salon=salon, status="handed_to_admin").order_by("-last_message_at")
-    return render(request, "admin_panel/escalations.html", {"salon": salon, "conversations": convs})
+    convs = Conversation.objects.filter(salon=salon, status="handed_to_admin").order_by(
+        "-last_message_at"
+    )
+    return render(
+        request,
+        "admin_panel/escalations.html",
+        {"salon": salon, "conversations": convs},
+    )
 
 
 @login_required

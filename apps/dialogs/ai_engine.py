@@ -1,6 +1,6 @@
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 
 import anthropic
@@ -68,6 +68,15 @@ async def _load_conversation_history(conversation) -> list[dict]:
 
 async def _save_user_message(conversation, text: str) -> None:
     from .models import Message
+    from django.utils import timezone
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=60)
+    already_saved = await Message.objects.filter(
+        conversation=conversation, role="user", content=text, created_at__gte=cutoff
+    ).aexists()
+    if already_saved:
+        return
     await Message.objects.acreate(
         conversation=conversation,
         direction="in",
@@ -76,8 +85,31 @@ async def _save_user_message(conversation, text: str) -> None:
     )
 
 
+async def _save_tool_turn(conversation, tool_calls_content, tool_results: list) -> None:
+    from .models import Message
+
+    serialized = [
+        b if isinstance(b, dict) else b.model_dump() for b in tool_calls_content
+    ]
+    await Message.objects.acreate(
+        conversation=conversation,
+        direction="out",
+        role="assistant",
+        content="",
+        tool_calls_json=serialized,
+    )
+    await Message.objects.acreate(
+        conversation=conversation,
+        direction="in",
+        role="tool",
+        content="",
+        tool_results_json=tool_results,
+    )
+
+
 async def _save_assistant_message(conversation, response: AIResponse) -> None:
     from .models import Message
+
     await Message.objects.acreate(
         conversation=conversation,
         direction="out",
@@ -126,7 +158,11 @@ async def _run_agent_loop(
 
         if api_response.stop_reason == "end_turn":
             text = next(
-                (block.text for block in api_response.content if hasattr(block, "text")),
+                (
+                    block.text
+                    for block in api_response.content
+                    if hasattr(block, "text")
+                ),
                 "Извините, не могу ответить прямо сейчас.",
             )
             latency = int((time.monotonic() - start) * 1000)
@@ -148,14 +184,17 @@ async def _run_agent_loop(
                         salon=salon,
                         conversation=conversation,
                     )
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(result, ensure_ascii=False),
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(result, ensure_ascii=False),
+                        }
+                    )
 
             messages.append({"role": "assistant", "content": api_response.content})
             messages.append({"role": "user", "content": tool_results})
+            await _save_tool_turn(conversation, api_response.content, tool_results)
             continue
 
         break

@@ -1,5 +1,5 @@
-import asyncio
 import structlog
+from asgiref.sync import async_to_sync
 from config.celery import app
 
 logger = structlog.get_logger(__name__)
@@ -12,12 +12,13 @@ def process_message_task(self, conversation_id: int, user_message: str):
     from apps.dialogs.ai_engine import process_incoming_message
 
     async def _run():
-        conversation = await Conversation.objects.select_related("salon").aget(pk=conversation_id)
-        response = await process_incoming_message(conversation, user_message)
-        return response
+        conversation = await Conversation.objects.select_related("salon").aget(
+            pk=conversation_id
+        )
+        return await process_incoming_message(conversation, user_message)
 
     try:
-        response = asyncio.run(_run())
+        response = async_to_sync(_run)()
         logger.info(
             "message_processed",
             conversation_id=conversation_id,
@@ -26,5 +27,9 @@ def process_message_task(self, conversation_id: int, user_message: str):
         )
         return {"text": response.text, "escalated": response.escalate}
     except Exception as exc:
-        logger.error("process_message_task_error", error=str(exc), conversation_id=conversation_id)
+        logger.error(
+            "process_message_task_error",
+            error=str(exc),
+            conversation_id=conversation_id,
+        )
         raise self.retry(exc=exc)
