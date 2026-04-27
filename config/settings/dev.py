@@ -12,3 +12,6 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Disable rate limiting in dev
 RATELIMIT_ENABLE = False
+
+# Trust ngrok tunnels for CSRF
+CSRF_TRUSTED_ORIGINS = ["https://*.ngrok-free.app"]

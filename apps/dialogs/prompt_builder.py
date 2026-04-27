@@ -1,5 +1,5 @@
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
 
 BASE_SYSTEM_PROMPT = """Ты — администратор салона красоты "{salon_name}". Твоя задача: помочь клиенту \
@@ -47,8 +47,13 @@ def _format_working_hours(hours_json: dict) -> str:
     if not hours_json:
         return "уточните по телефону"
     days = {
-        "mon": "Пн", "tue": "Вт", "wed": "Ср",
-        "thu": "Чт", "fri": "Пт", "sat": "Сб", "sun": "Вс",
+        "mon": "Пн",
+        "tue": "Вт",
+        "wed": "Ср",
+        "thu": "Чт",
+        "fri": "Пт",
+        "sat": "Сб",
+        "sun": "Вс",
     }
     lines = []
     for key, label in days.items():
@@ -61,7 +66,7 @@ def _format_working_hours(hours_json: dict) -> str:
 
 
 def build_system_prompt(salon) -> str:
-    tz = pytz.timezone(salon.timezone)
+    tz = ZoneInfo(salon.timezone)
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M")
 
     prompt = BASE_SYSTEM_PROMPT.format(
