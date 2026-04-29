@@ -12,7 +12,7 @@ class KnowledgeDocumentAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         # Trigger re-indexing when document is saved via admin
-        from apps.knowledge_base.indexer import index_document_task
+        from apps.knowledge_base.tasks import index_document_task
         index_document_task.delay(obj.id)
 
 

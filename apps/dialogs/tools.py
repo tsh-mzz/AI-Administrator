@@ -128,6 +128,11 @@ async def _get_services(tool_input: dict, salon) -> dict:
             "price_min": float(s.price_min),
             "price_max": float(s.price_max) if s.price_max else None,
         })
+    if not services:
+        return {
+            "services": [],
+            "note": "CRM не подключён. Используй search_knowledge_base чтобы найти информацию о ценах и услугах.",
+        }
     return {"services": services}
 
 

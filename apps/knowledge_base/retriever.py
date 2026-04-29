@@ -28,15 +28,16 @@ async def search_knowledge(salon_id: int, query: str, top_k: int = 3) -> list[di
         query_vector = await _get_embedding(query)
         qdrant = _get_qdrant()
 
-        results = await qdrant.search(
+        response = await qdrant.query_points(
             collection_name=COLLECTION,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=Filter(
                 must=[FieldCondition(key="salon_id", match=MatchValue(value=salon_id))]
             ),
             limit=top_k,
-            score_threshold=0.5,
+            score_threshold=0.3,
         )
+        results = response.points
 
         logger.info("knowledge_search", salon_id=salon_id, query=query[:60], hits=len(results))
 
