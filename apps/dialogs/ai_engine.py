@@ -40,6 +40,45 @@ def _calculate_cost(tokens_input: int, tokens_output: int) -> Decimal:
     )
 
 
+def _extract_failed_tool_calls(exc: openai.BadRequestError) -> list | None:
+    """Parse tool calls from Groq's tool_use_failed error response.
+
+    In the openai SDK, exc.body is already the inner "error" dict
+    (the SDK strips the outer {"error": ...} wrapper via _make_status_error).
+    """
+    try:
+        body = exc.body or {}
+        if body.get("code") != "tool_use_failed":
+            return None
+        return json.loads(body.get("failed_generation", "[]"))
+    except Exception:
+        return None
+
+
+def _coerce_tool_args(tool_name: str, args: dict) -> dict:
+    """Cast string integers, drop empty optional ints, and fix datetime format."""
+    _INT_FIELDS: dict[str, set[str]] = {
+        "get_masters": {"service_id"},
+        "get_available_slots": {"service_id", "master_id"},
+        "create_booking": {"service_id", "master_id"},
+    }
+    int_fields = _INT_FIELDS.get(tool_name, set())
+    result = {}
+    for k, v in args.items():
+        if k in int_fields:
+            if v == "" or v is None:
+                continue
+            try:
+                result[k] = int(v)
+            except (ValueError, TypeError):
+                result[k] = v
+        elif k == "datetime" and isinstance(v, str) and len(v) == 16:
+            result[k] = v + ":00"  # "2026-04-30T11:30" → "2026-04-30T11:30:00"
+        else:
+            result[k] = v
+    return result
+
+
 def _to_openai_tools(tools: list) -> list:
     return [
         {
@@ -164,12 +203,58 @@ async def _run_agent_loop(
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     for iteration in range(max_iterations):
-        api_response = await client.chat.completions.create(
-            model=salon.ai_model,
-            messages=full_messages,
-            tools=openai_tools,
-            max_tokens=1024,
-        )
+        try:
+            api_response = await client.chat.completions.create(
+                model=salon.ai_model,
+                messages=full_messages,
+                tools=openai_tools,
+                max_tokens=1024,
+            )
+        except openai.BadRequestError as exc:
+            raw_calls = _extract_failed_tool_calls(exc)
+            if raw_calls is None:
+                raise
+            tool_results = []
+            serialized_calls = []
+            for i, call in enumerate(raw_calls):
+                tc_name = call.get("name", "")
+                tc_args = _coerce_tool_args(tc_name, call.get("parameters", {}))
+                tc_id = f"call_coerced_{iteration}_{i}"
+                result = await execute_tool(
+                    tool_name=tc_name,
+                    tool_input=tc_args,
+                    salon=salon,
+                    conversation=conversation,
+                )
+                tool_results.append(
+                    {
+                        "tool_call_id": tc_id,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+                serialized_calls.append(
+                    {
+                        "id": tc_id,
+                        "type": "function",
+                        "function": {
+                            "name": tc_name,
+                            "arguments": json.dumps(tc_args, ensure_ascii=False),
+                        },
+                    }
+                )
+            full_messages.append(
+                {"role": "assistant", "content": None, "tool_calls": serialized_calls}
+            )
+            for tr in tool_results:
+                full_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tr["tool_call_id"],
+                        "content": tr["content"],
+                    }
+                )
+            await _save_tool_turn(conversation, serialized_calls, tool_results)
+            continue
 
         usage = api_response.usage
         if usage:

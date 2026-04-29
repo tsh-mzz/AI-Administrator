@@ -51,12 +51,10 @@ TOOLS_SCHEMA = [
                 "master_id": {"type": "integer"},
                 "date_from": {
                     "type": "string",
-                    "format": "date",
                     "description": "YYYY-MM-DD",
                 },
                 "date_to": {
                     "type": "string",
-                    "format": "date",
                     "description": "YYYY-MM-DD",
                 },
             },
@@ -65,21 +63,30 @@ TOOLS_SCHEMA = [
     },
     {
         "name": "create_booking",
-        "description": "Создать запись клиента на услугу после подтверждения всех данных",
+        "description": (
+            "Создать запись клиента. "
+            "ВАЖНО: перед вызовом ОБЯЗАТЕЛЬНО спроси имя и номер телефона клиента — "
+            "нельзя вызывать этот инструмент с пустыми client_phone или client_name."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "client_phone": {"type": "string"},
-                "client_name": {"type": "string"},
+                "client_phone": {
+                    "type": "string",
+                    "description": "Номер телефона клиента (обязательно спросить заранее)",
+                },
+                "client_name": {
+                    "type": "string",
+                    "description": "Имя клиента (обязательно спросить заранее)",
+                },
                 "service_id": {"type": "integer"},
                 "master_id": {"type": "integer"},
                 "datetime": {
                     "type": "string",
-                    "format": "date-time",
-                    "description": "ISO 8601",
+                    "description": "ISO 8601 с секундами, например 2026-05-02T14:00:00",
                 },
             },
-            "required": ["client_phone", "service_id", "datetime"],
+            "required": ["client_phone", "client_name", "service_id", "datetime"],
         },
     },
     {
