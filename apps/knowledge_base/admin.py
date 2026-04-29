@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import KnowledgeDocument, Service, Master
+from .models import Booking, KnowledgeDocument, Master, Service
 
 
 @admin.register(KnowledgeDocument)
@@ -13,12 +13,21 @@ class KnowledgeDocumentAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
         # Trigger re-indexing when document is saved via admin
         from apps.knowledge_base.tasks import index_document_task
+
         index_document_task.delay(obj.id)
 
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ("title", "salon", "category", "duration_minutes", "price_min", "price_max", "is_active")
+    list_display = (
+        "title",
+        "salon",
+        "category",
+        "duration_minutes",
+        "price_min",
+        "price_max",
+        "is_active",
+    )
     list_filter = ("salon", "category", "is_active")
     search_fields = ("title",)
     readonly_fields = ("yclients_id", "synced_at")
@@ -26,7 +35,24 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(Master)
 class MasterAdmin(admin.ModelAdmin):
-    list_display = ("name", "salon", "specialization", "is_active")
+    list_display = ("name", "salon", "specialization", "experience_years", "is_active")
     list_filter = ("salon", "is_active")
     search_fields = ("name",)
-    readonly_fields = ("yclients_id", "synced_at")
+    readonly_fields = ("synced_at",)
+    filter_horizontal = ("services",)
+
+
+@admin.register(Booking)
+class BookingAdmin(admin.ModelAdmin):
+    list_display = (
+        "client_name",
+        "client_phone",
+        "service",
+        "master",
+        "starts_at",
+        "status",
+    )
+    list_filter = ("salon", "status", "master")
+    search_fields = ("client_name", "client_phone")
+    readonly_fields = ("created_at",)
+    date_hierarchy = "starts_at"
