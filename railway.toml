@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeploy = "python manage.py collectstatic --noinput && python manage.py migrate --noinput && python manage.py seed_demo_salon && python manage.py createsuperuser --username admin --email admin@example.com --noinput"
+preDeploy = "python manage.py collectstatic --noinput && python manage.py migrate --noinput"
 startCommand = "sh -c \"gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120\""
 healthcheckPath = "/healthz"
 healthcheckTimeout = 60
