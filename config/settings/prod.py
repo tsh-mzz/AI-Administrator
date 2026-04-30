@@ -10,7 +10,7 @@ DEBUG = False
 _railway_domain = env("RAILWAY_PUBLIC_DOMAIN", default="")
 _extra_hosts = env.list("ALLOWED_HOSTS", default=[])
 ALLOWED_HOSTS = list(
-    filter(None, [_railway_domain, "healthcheck.railway.app"] + _extra_hosts)
+    filter(None, [_railway_domain, ".railway.app"] + _extra_hosts)
 ) or ["localhost"]
 
 # Railway terminates SSL and forwards X-Forwarded-Proto: https.
