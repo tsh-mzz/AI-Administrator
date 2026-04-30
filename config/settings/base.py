@@ -2,6 +2,8 @@ import environ
 import structlog
 from pathlib import Path
 
+from apps.salons.logging import mask_pii
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 env = environ.Env(
@@ -143,6 +145,7 @@ LOGGING = {
 
 structlog.configure(
     processors=[
+        mask_pii,
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,
