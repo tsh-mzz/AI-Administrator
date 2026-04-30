@@ -1,0 +1,42 @@
+# Secrets — never bake these into the image
+.env
+.env.*
+!.env.example
+!.env.railway.example
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Dev / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local backups and data dumps
+backups/
+*.json.gz
+
+# Docs / plans (not needed at runtime)
+docs/
+PROJECT_PLAN.md
+README.md
+
+# Dev dependencies
+requirements-dev.txt
+
+# Celery beat schedule (runtime state, not source)
+celerybeat-schedule
+
+# Local compose files
+docker-compose.yml
+docker-compose.prod.yml

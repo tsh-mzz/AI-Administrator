@@ -18,3 +18,4 @@ django-ratelimit>=4.1
 structlog>=24.1
 sentry-sdk[django]>=1.40
 gunicorn>=21.2
+whitenoise>=6.6
