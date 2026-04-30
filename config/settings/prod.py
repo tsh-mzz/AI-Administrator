@@ -9,7 +9,9 @@ DEBUG = False
 # ALLOWED_HOSTS env var lets you add a custom domain later.
 _railway_domain = env("RAILWAY_PUBLIC_DOMAIN", default="")
 _extra_hosts = env.list("ALLOWED_HOSTS", default=[])
-ALLOWED_HOSTS = list(filter(None, [_railway_domain] + _extra_hosts)) or ["localhost"]
+ALLOWED_HOSTS = list(
+    filter(None, [_railway_domain, "healthcheck.railway.app"] + _extra_hosts)
+) or ["localhost"]
 
 # Railway terminates SSL and forwards X-Forwarded-Proto: https.
 # SECURE_SSL_REDIRECT is intentionally omitted — Railway's internal healthcheck
