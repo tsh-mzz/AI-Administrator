@@ -31,6 +31,10 @@ db.sqlite3
 media/
 staticfiles/
 
+# Backups (DB dumps stay on server, not in git)
+backups/
+*.json.gz
+
 # Celery
 celerybeat-schedule
 celerybeat-schedule.db

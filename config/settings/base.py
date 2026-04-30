@@ -119,6 +119,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.integrations.yclients.sync.sync_clients_for_all_salons",
         "schedule": 86400,
     },
+    "backup-database-daily": {
+        "task": "apps.knowledge_base.tasks.backup_database_task",
+        "schedule": 86400,
+    },
 }
 
 # Qdrant
