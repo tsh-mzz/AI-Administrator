@@ -15,6 +15,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Bake static files into the image so they're available at runtime.
+# collectstatic doesn't touch the DB, so a dummy SECRET_KEY is fine here.
+RUN DJANGO_SETTINGS_MODULE=config.settings.prod \
+    SECRET_KEY=collectstatic-build-only \
+    FIELD_ENCRYPTION_KEY=YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE= \
+    python manage.py collectstatic --noinput
+
 EXPOSE 8000
 
 # Default command for local Docker runs.
