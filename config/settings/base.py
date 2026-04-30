@@ -162,6 +162,9 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
+# Rate limiting
+RATELIMIT_VIEW = "config.views.ratelimit_handler"
+
 # CORS
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = False
