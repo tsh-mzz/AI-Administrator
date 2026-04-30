@@ -175,12 +175,17 @@ async def _get_masters(tool_input: dict, salon) -> dict:
     async for m in qs.distinct():
         masters.append(
             {
-                "id": m.yclients_id or m.pk,  # use local pk when no YCLIENTS
+                "id": m.yclients_id or m.pk,
                 "name": m.name,
                 "specialization": m.specialization,
                 "experience_years": m.experience_years,
             }
         )
+    if not masters:
+        return {
+            "masters": [],
+            "note": "CRM не подключён. Используй search_knowledge_base чтобы найти информацию о мастерах.",
+        }
     return {"masters": masters}
 
 
