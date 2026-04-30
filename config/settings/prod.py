@@ -11,9 +11,10 @@ _railway_domain = env("RAILWAY_PUBLIC_DOMAIN", default="")
 _extra_hosts = env.list("ALLOWED_HOSTS", default=[])
 ALLOWED_HOSTS = list(filter(None, [_railway_domain] + _extra_hosts)) or ["localhost"]
 
-# Railway terminates SSL and forwards X-Forwarded-Proto: https
+# Railway terminates SSL and forwards X-Forwarded-Proto: https.
+# SECURE_SSL_REDIRECT is intentionally omitted — Railway's internal healthcheck
+# hits the container over plain HTTP, and a 301 redirect would fail the check.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
