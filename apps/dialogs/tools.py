@@ -374,6 +374,25 @@ async def _create_local_booking(tool_input: dict, salon, conversation) -> dict:
     )
 
     logger.info("local_booking_created", booking_id=booking.pk, salon_id=salon.id)
+
+    if salon.admin_telegram_id:
+        try:
+            from apps.integrations.telegram.client import TelegramClient
+            client = TelegramClient(token=salon.telegram_bot_token)
+            master_str = master.name if master else "любой свободный"
+            text = (
+                f"📅 Новая запись!\n"
+                f"Клиент: {client_name}\n"
+                f"Телефон: {client_phone}\n"
+                f"Услуга: {service.title}\n"
+                f"Мастер: {master_str}\n"
+                f"Дата и время: {starts_at.strftime('%d.%m.%Y в %H:%M')}\n"
+                f"Канал: {conversation.channel}"
+            )
+            await client.send_message(chat_id=salon.admin_telegram_id, text=text)
+        except Exception as exc:
+            logger.error("booking_notify_error", error=str(exc))
+
     return {
         "success": True,
         "booking_id": booking.pk,
