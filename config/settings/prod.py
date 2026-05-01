@@ -25,9 +25,18 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
-# Trust the Railway domain (and any custom domain) for CSRF
+
+# Trust the Railway domain (and any custom domain) for CSRF.
+# Hosts beginning with "." are suffix wildcards (e.g. ".railway.app") and need
+# to be expanded to "https://*.railway.app" for Django to accept them.
+def _csrf_origin(host: str) -> str:
+    if host.startswith("."):
+        return f"https://*{host}"
+    return f"https://{host}"
+
+
 CSRF_TRUSTED_ORIGINS = [
-    f"https://{h}" for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")
+    _csrf_origin(h) for h in ALLOWED_HOSTS if h not in ("localhost", "127.0.0.1")
 ]
 
 # WhiteNoise: serve compressed, cache-busted static files directly from gunicorn
