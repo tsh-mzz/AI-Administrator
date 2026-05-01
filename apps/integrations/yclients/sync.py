@@ -69,16 +69,22 @@ def sync_masters_for_salon(salon_id: int):
         )
         staff = await client.get_staff(salon.yclients_company_id)
         for m in staff:
-            await Master.objects.aupdate_or_create(
+            master, _ = await Master.objects.aupdate_or_create(
                 salon=salon,
                 yclients_id=m["id"],
                 defaults={
                     "name": m.get("name", ""),
                     "specialization": m.get("specialization", ""),
-                    "service_ids": [s["id"] for s in m.get("services", [])],
                     "is_active": True,
                 },
             )
+            yclients_service_ids = [s["id"] for s in m.get("services", [])]
+            if yclients_service_ids:
+                from apps.knowledge_base.models import Service
+                services = Service.objects.filter(
+                    salon=salon, yclients_id__in=yclients_service_ids
+                )
+                await master.services.aset(services)
         logger.info("masters_synced", salon_id=salon_id, count=len(staff))
 
     asyncio.run(_run())
