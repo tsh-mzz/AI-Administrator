@@ -347,6 +347,20 @@ async def _create_local_booking(tool_input: dict, salon, conversation) -> dict:
 
     ends_at = starts_at + timedelta(minutes=service.duration_minutes)
 
+    # Validate that requested time aligns with slot grid
+    available = await _get_local_slots(
+        {"service_id": service_id, "master_id": master_id, "date_from": starts_at.strftime("%Y-%m-%d")},
+        salon,
+    )
+    valid_times = [s["datetime"] for s in available.get("slots", [])]
+    requested_time = starts_at.strftime("%Y-%m-%dT%H:%M")
+    if valid_times and requested_time not in valid_times:
+        suggestions = ", ".join(valid_times[:5])
+        return {
+            "success": False,
+            "error": f"Время {starts_at.strftime('%H:%M')} недоступно. Свободные слоты: {suggestions}. Предложи клиенту один из них.",
+        }
+
     # Check conflict
     if master:
         conflict = await Booking.objects.filter(
