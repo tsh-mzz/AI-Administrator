@@ -22,49 +22,67 @@ class YclientsClient:
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.get(f"{BASE_URL}{path}", headers=self._headers(), params=params)
+                    resp = await client.get(
+                        f"{BASE_URL}{path}", headers=self._headers(), params=params
+                    )
                     if resp.status_code == 429:
-                        wait = 2 ** attempt
-                        logger.warning("yclients_rate_limit", attempt=attempt, wait=wait)
+                        wait = 2**attempt
+                        logger.warning(
+                            "yclients_rate_limit", attempt=attempt, wait=wait
+                        )
                         await asyncio.sleep(wait)
                         continue
                     resp.raise_for_status()
                     return resp.json()
-            except httpx.HTTPError as exc:
+            except httpx.HTTPError:
                 if attempt == 2:
                     raise
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2**attempt)
         return {}
 
     async def _post(self, path: str, body: dict) -> dict:
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.post(f"{BASE_URL}{path}", headers=self._headers(), json=body)
+                    resp = await client.post(
+                        f"{BASE_URL}{path}", headers=self._headers(), json=body
+                    )
                     if resp.status_code == 429:
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(2**attempt)
                         continue
                     resp.raise_for_status()
                     return resp.json()
-            except httpx.HTTPError as exc:
+            except httpx.HTTPError:
                 if attempt == 2:
                     raise
-                await asyncio.sleep(2 ** attempt)
+                await asyncio.sleep(2**attempt)
         return {}
 
     async def get_services(self, company_id: int) -> list[dict]:
         data = await self._get(f"/book_services/{company_id}")
-        return data.get("data", [])
+        # YClients returns {"data": {"services": [...], "category": [...]}}.
+        # Some legacy accounts return {"data": [...]} directly — handle both.
+        payload = data.get("data", [])
+        if isinstance(payload, dict):
+            return payload.get("services", []) or []
+        return payload or []
 
     async def get_staff(self, company_id: int) -> list[dict]:
         data = await self._get(f"/book_staff/{company_id}")
-        return data.get("data", [])
+        payload = data.get("data", [])
+        if isinstance(payload, dict):
+            return payload.get("staff", payload.get("masters", [])) or []
+        return payload or []
 
-    async def get_available_slots(self, company_id: int, staff_id: int | None, date: str) -> list[dict]:
+    async def get_available_slots(
+        self, company_id: int, staff_id: int | None, date: str
+    ) -> list[dict]:
         params = {}
         if staff_id:
             params["staff_id"] = staff_id
-        data = await self._get(f"/book_times/{company_id}/{staff_id or 0}/{date}", params=params)
+        data = await self._get(
+            f"/book_times/{company_id}/{staff_id or 0}/{date}", params=params
+        )
         return data.get("data", [])
 
     async def create_booking(self, company_id: int, booking_data: dict) -> dict:
