@@ -13,13 +13,25 @@ class TelegramHandler(ChannelHandler):
             return
 
         text = message.get("text", "").strip()
+
         if not text:
-            await self.send_message(
-                salon=salon,
-                external_chat_id=str(message["chat"]["id"]),
-                text="Пожалуйста, напишите ваш вопрос текстом 🙏",
-            )
-            return
+            voice = message.get("voice") or message.get("audio")
+            if voice:
+                text = await self._transcribe_voice(voice, salon)
+                if not text:
+                    await self.send_message(
+                        salon=salon,
+                        external_chat_id=str(message["chat"]["id"]),
+                        text="Не удалось распознать голосовое сообщение. Пожалуйста, напишите текстом 🙏",
+                    )
+                    return
+            else:
+                await self.send_message(
+                    salon=salon,
+                    external_chat_id=str(message["chat"]["id"]),
+                    text="Пожалуйста, напишите ваш вопрос текстом 🙏",
+                )
+                return
 
         chat_id = str(message["chat"]["id"])
         from_user = message.get("from", {})
@@ -44,6 +56,36 @@ class TelegramHandler(ChannelHandler):
     async def send_message(self, salon, external_chat_id: str, text: str) -> None:
         client = TelegramClient(token=salon.telegram_bot_token)
         await client.send_message(chat_id=external_chat_id, text=text)
+
+    async def _transcribe_voice(self, voice: dict, salon) -> str:
+        try:
+            from django.conf import settings
+            import openai
+            from apps.integrations.telegram.client import TelegramClient
+
+            file_id = voice.get("file_id")
+            if not file_id:
+                return ""
+
+            tg_client = TelegramClient(token=salon.telegram_bot_token)
+            audio_bytes = await tg_client.download_file(file_id)
+
+            oai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            import io
+            audio_file = io.BytesIO(audio_bytes)
+            audio_file.name = "voice.ogg"
+
+            transcript = await oai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="ru",
+            )
+            text = transcript.text.strip()
+            logger.info("voice_transcribed", salon_id=salon.id, length=len(text))
+            return text
+        except Exception as exc:
+            logger.error("voice_transcription_error", error=str(exc), salon_id=salon.id)
+            return ""
 
     async def _get_or_create_conversation(self, salon, chat_id: str, user_name: str):
         from apps.dialogs.models import Conversation

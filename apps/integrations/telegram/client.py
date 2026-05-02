@@ -22,6 +22,20 @@ class TelegramClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_file_url(self, file_id: str) -> str:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(self._url("getFile"), params={"file_id": file_id})
+            resp.raise_for_status()
+            file_path = resp.json()["result"]["file_path"]
+            return f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+
+    async def download_file(self, file_id: str) -> bytes:
+        url = await self.get_file_url(file_id)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.content
+
     async def set_webhook(self, url: str, secret_token: str) -> dict:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
