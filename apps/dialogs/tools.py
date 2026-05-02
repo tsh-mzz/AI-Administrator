@@ -109,6 +109,7 @@ def get_tools_for_salon(salon) -> list:
 
 async def execute_tool(tool_name: str, tool_input: dict, salon, conversation) -> dict:
     logger.info("tool_call", tool=tool_name, input=tool_input, salon_id=salon.id)
+    tool_input = tool_input or {}
 
     if tool_name == "search_knowledge_base":
         return await _search_knowledge_base(tool_input, salon)
@@ -349,7 +350,11 @@ async def _create_local_booking(tool_input: dict, salon, conversation) -> dict:
 
     # Validate that requested time aligns with slot grid
     available = await _get_local_slots(
-        {"service_id": service_id, "master_id": master_id, "date_from": starts_at.strftime("%Y-%m-%d")},
+        {
+            "service_id": service_id,
+            "master_id": master_id,
+            "date_from": starts_at.strftime("%Y-%m-%d"),
+        },
         salon,
     )
     valid_times = [s["datetime"] for s in available.get("slots", [])]
@@ -392,6 +397,7 @@ async def _create_local_booking(tool_input: dict, salon, conversation) -> dict:
     if salon.admin_telegram_id:
         try:
             from apps.integrations.telegram.client import TelegramClient
+
             client = TelegramClient(token=salon.telegram_bot_token)
             master_str = master.name if master else "любой свободный"
             text = (
