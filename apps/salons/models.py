@@ -33,7 +33,7 @@ class Salon(models.Model):
 
     # AI settings
     system_prompt_override = models.TextField(blank=True)
-    ai_model = models.CharField(max_length=50, default="llama-3.3-70b-versatile")
+    ai_model = models.CharField(max_length=50, default="gpt-4o-mini")
 
     # Operational
     admin_telegram_id = models.CharField(max_length=50, null=True, blank=True)

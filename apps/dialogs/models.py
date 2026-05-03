@@ -68,3 +68,22 @@ class Message(models.Model):
 
     def __str__(self):
         return f"[{self.role}] {self.content[:60]}"
+
+
+class AIUsageLog(models.Model):
+    salon = models.ForeignKey(Salon, on_delete=models.CASCADE, related_name="usage_logs")
+    conversation = models.ForeignKey(
+        Conversation, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    model = models.CharField(max_length=100)
+    prompt_tokens = models.IntegerField()
+    completion_tokens = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["salon", "created_at"])]
+        verbose_name = "Использование AI"
+        verbose_name_plural = "Использование AI"
+
+    def __str__(self):
+        return f"{self.model} | {self.salon.name} | {self.created_at:%Y-%m-%d %H:%M}"

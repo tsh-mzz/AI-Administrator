@@ -12,8 +12,10 @@ from .tools import execute_tool, get_tools_for_salon
 
 logger = structlog.get_logger(__name__)
 
-_COST_INPUT_PER_M = Decimal("0.00")
-_COST_OUTPUT_PER_M = Decimal("0.00")
+_COST_INPUT_PER_M = Decimal("0.15")   # gpt-4o-mini input  $/1M tokens
+_COST_OUTPUT_PER_M = Decimal("0.60")  # gpt-4o-mini output $/1M tokens
+
+_DEFAULT_MODEL = "gpt-4o-mini"
 
 
 @dataclass
@@ -28,8 +30,7 @@ class AIResponse:
 
 def _get_client() -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI(
-        api_key=settings.GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1",
+        api_key=settings.OPENAI_API_KEY,
     )
 
 
@@ -41,10 +42,9 @@ def _calculate_cost(tokens_input: int, tokens_output: int) -> Decimal:
 
 
 def _extract_failed_tool_calls(exc: openai.BadRequestError) -> list | None:
-    """Parse tool calls from Groq's tool_use_failed error response.
+    """Defensive: parse Groq tool_use_failed errors. Rarely fires with OpenAI.
 
-    In the openai SDK, exc.body is already the inner "error" dict
-    (the SDK strips the outer {"error": ...} wrapper via _make_status_error).
+    Keep for a few weeks as a fallback layer.
     """
     try:
         body = exc.body or {}
@@ -186,6 +186,20 @@ async def _save_assistant_message(conversation, response: AIResponse) -> None:
     )
 
 
+async def _log_usage(conversation, model: str, prompt_tokens: int, completion_tokens: int) -> None:
+    from .models import AIUsageLog
+    try:
+        await AIUsageLog.objects.acreate(
+            salon_id=conversation.salon_id,
+            conversation=conversation,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+    except Exception as exc:
+        logger.warning("usage_log_failed", error=str(exc))
+
+
 async def _run_agent_loop(
     system_prompt: str,
     messages: list[dict],
@@ -199,18 +213,38 @@ async def _run_agent_loop(
     total_input = 0
     total_output = 0
     start = time.monotonic()
+    model = salon.ai_model or _DEFAULT_MODEL
 
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     for iteration in range(max_iterations):
         try:
             api_response = await client.chat.completions.create(
-                model=salon.ai_model,
+                model=model,
                 messages=full_messages,
                 tools=openai_tools,
                 max_tokens=1024,
+                parallel_tool_calls=False,
+            )
+        except openai.RateLimitError:
+            logger.warning("openai_rate_limited", salon_id=salon.id, model=model)
+            return AIResponse(
+                text="Извините, сервис временно перегружен. Попробуйте через минуту.",
+                tokens_input=total_input,
+                tokens_output=total_output,
+                latency_ms=int((time.monotonic() - start) * 1000),
+            )
+        except openai.APITimeoutError:
+            logger.error("openai_timeout", salon_id=salon.id, model=model)
+            return AIResponse(
+                text="Извините, произошла техническая ошибка. Администратор свяжется с вами.",
+                tokens_input=total_input,
+                tokens_output=total_output,
+                latency_ms=int((time.monotonic() - start) * 1000),
+                escalate=True,
             )
         except openai.BadRequestError as exc:
+            # Groq tool_use_failed defensive fallback — rarely fires with OpenAI
             raw_calls = _extract_failed_tool_calls(exc)
             if raw_calls is None:
                 raise
@@ -260,18 +294,19 @@ async def _run_agent_loop(
         if usage:
             total_input += usage.prompt_tokens
             total_output += usage.completion_tokens
+            logger.info(
+                "llm_call",
+                salon_id=salon.id,
+                model=model,
+                iteration=iteration,
+                finish_reason=api_response.choices[0].finish_reason,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+            )
+            await _log_usage(conversation, model, usage.prompt_tokens, usage.completion_tokens)
 
         choice = api_response.choices[0]
         finish_reason = choice.finish_reason
-
-        logger.info(
-            "llm_call",
-            salon_id=salon.id,
-            iteration=iteration,
-            finish_reason=finish_reason,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-        )
 
         if finish_reason == "stop":
             text = choice.message.content or "Извините, не могу ответить прямо сейчас."
@@ -291,6 +326,7 @@ async def _run_agent_loop(
 
             for tc in tool_calls:
                 tool_input = json.loads(tc.function.arguments)
+                tool_input = _coerce_tool_args(tc.function.name, tool_input)
                 result = await execute_tool(
                     tool_name=tc.function.name,
                     tool_input=tool_input,
