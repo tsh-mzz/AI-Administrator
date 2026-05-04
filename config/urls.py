@@ -26,6 +26,7 @@ urlpatterns = [
     path("accounts/login/", RateLimitedLoginView.as_view(), name="login"),
     path("accounts/logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("webhooks/telegram/", include("apps.integrations.telegram.urls")),
+    path("webhooks/max/", include("apps.integrations.max.urls")),
     path("webhooks/wazzup/", include("apps.integrations.wazzup.urls")),
     path("salon/", include("apps.admin_panel.urls")),
 ]

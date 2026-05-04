@@ -98,17 +98,26 @@ def _to_openai_tools(tools: list) -> list:
 async def _load_conversation_history(conversation) -> list[dict]:
     from .models import Message
 
-    messages = []
-    async for msg in (
-        Message.objects.filter(conversation=conversation)
-        .exclude(role="system")
-        .order_by("-created_at")[:20]
-    ):
-        messages.append(msg)
+    summarized_through_id = (conversation.context_json or {}).get("summarized_through_id", 0)
+    summary = (conversation.context_json or {}).get("summary", "")
 
+    qs = Message.objects.filter(conversation=conversation).exclude(role="system")
+    if summarized_through_id:
+        qs = qs.filter(id__gt=summarized_through_id)
+
+    messages = []
+    async for msg in qs.order_by("-created_at")[:20]:
+        messages.append(msg)
     messages.reverse()
 
     history = []
+
+    if summary:
+        history.append({
+            "role": "system",
+            "content": f"Краткое содержание предыдущей части разговора: {summary}",
+        })
+
     for msg in messages:
         if msg.tool_calls_json:
             history.append(
@@ -151,6 +160,83 @@ async def _load_conversation_history(conversation) -> list[dict]:
             cleaned.append(entry)
 
     return cleaned
+
+
+async def _maybe_compress_history(conversation) -> None:
+    from .models import Message
+
+    summarized_through_id = (conversation.context_json or {}).get("summarized_through_id", 0)
+
+    total = await Message.objects.filter(
+        conversation=conversation,
+        role__in=["user", "assistant"],
+        id__gt=summarized_through_id,
+    ).acount()
+
+    if total <= 20:
+        return
+
+    # Keep the 10 most recent messages raw; summarize everything older
+    keep_ids = [
+        msg.id async for msg in (
+            Message.objects.filter(
+                conversation=conversation,
+                role__in=["user", "assistant"],
+                id__gt=summarized_through_id,
+            ).order_by("-created_at")[:10]
+        )
+    ]
+
+    old_messages = [
+        msg async for msg in (
+            Message.objects.filter(
+                conversation=conversation,
+                role__in=["user", "assistant"],
+                id__gt=summarized_through_id,
+            ).exclude(id__in=keep_ids).order_by("created_at")
+        )
+    ]
+
+    if not old_messages:
+        return
+
+    lines = []
+    for msg in old_messages:
+        prefix = "Клиент" if msg.role == "user" else "Бот"
+        lines.append(f"{prefix}: {msg.content[:300]}")
+
+    client = _get_client()
+    try:
+        resp = await client.chat.completions.create(
+            model=_DEFAULT_MODEL,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Кратко суммируй этот диалог в 3-5 предложениях. "
+                    "Укажи: что хотел клиент, что обсуждали, какие услуги/мастера/время рассматривались, "
+                    "что было забронировано (если было), имя и телефон клиента (если назвал).\n\n"
+                    + "\n".join(lines)
+                ),
+            }],
+            max_tokens=300,
+        )
+        summary = resp.choices[0].message.content.strip()
+    except Exception as exc:
+        logger.warning("summarization_failed", error=str(exc))
+        return
+
+    context = dict(conversation.context_json or {})
+    context["summary"] = summary
+    context["summarized_through_id"] = old_messages[-1].id
+
+    await conversation.__class__.objects.filter(pk=conversation.pk).aupdate(
+        context_json=context
+    )
+    logger.info(
+        "history_compressed",
+        conversation_id=conversation.pk,
+        messages_compressed=len(old_messages),
+    )
 
 
 async def _save_user_message(conversation, text: str) -> None:
@@ -438,5 +524,7 @@ async def process_incoming_message(conversation, user_message: str) -> AIRespons
         await conversation.__class__.objects.filter(pk=conversation.pk).aupdate(
             status="handed_to_admin"
         )
+
+    await _maybe_compress_history(conversation)
 
     return response
