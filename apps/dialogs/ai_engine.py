@@ -12,7 +12,7 @@ from .tools import execute_tool, get_tools_for_salon
 
 logger = structlog.get_logger(__name__)
 
-_COST_INPUT_PER_M = Decimal("0.15")   # gpt-4o-mini input  $/1M tokens
+_COST_INPUT_PER_M = Decimal("0.15")  # gpt-4o-mini input  $/1M tokens
 _COST_OUTPUT_PER_M = Decimal("0.60")  # gpt-4o-mini output $/1M tokens
 
 _DEFAULT_MODEL = "gpt-4o-mini"
@@ -130,7 +130,27 @@ async def _load_conversation_history(conversation) -> list[dict]:
         else:
             history.append({"role": msg.role, "content": msg.content})
 
-    return history
+    # Drop orphan tool messages whose introducing assistant.tool_calls was
+    # truncated off by the 20-message window. OpenAI 400s on tool messages
+    # without a preceding tool_calls message in the same payload.
+    known_tool_call_ids: set[str] = set()
+    cleaned: list[dict] = []
+    for entry in history:
+        if entry["role"] == "assistant" and entry.get("tool_calls"):
+            for tc in entry["tool_calls"]:
+                tc_id = (
+                    tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                )
+                if tc_id:
+                    known_tool_call_ids.add(tc_id)
+            cleaned.append(entry)
+        elif entry["role"] == "tool":
+            if entry.get("tool_call_id") in known_tool_call_ids:
+                cleaned.append(entry)
+        else:
+            cleaned.append(entry)
+
+    return cleaned
 
 
 async def _save_user_message(conversation, text: str) -> None:
@@ -186,8 +206,11 @@ async def _save_assistant_message(conversation, response: AIResponse) -> None:
     )
 
 
-async def _log_usage(conversation, model: str, prompt_tokens: int, completion_tokens: int) -> None:
+async def _log_usage(
+    conversation, model: str, prompt_tokens: int, completion_tokens: int
+) -> None:
     from .models import AIUsageLog
+
     try:
         await AIUsageLog.objects.acreate(
             salon_id=conversation.salon_id,
@@ -303,7 +326,9 @@ async def _run_agent_loop(
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
             )
-            await _log_usage(conversation, model, usage.prompt_tokens, usage.completion_tokens)
+            await _log_usage(
+                conversation, model, usage.prompt_tokens, usage.completion_tokens
+            )
 
         choice = api_response.choices[0]
         finish_reason = choice.finish_reason
