@@ -101,6 +101,7 @@ class Booking(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="confirmed"
     )
     notes = models.TextField(blank=True)
+    reminder_sent = models.BooleanField(default=False)
     conversation = models.ForeignKey(
         "dialogs.Conversation", null=True, blank=True, on_delete=models.SET_NULL
     )

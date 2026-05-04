@@ -1,5 +1,6 @@
 import environ
 import structlog
+from celery.schedules import crontab
 from pathlib import Path
 
 from apps.salons.logging import mask_pii
@@ -123,6 +124,10 @@ CELERY_BEAT_SCHEDULE = {
     "backup-database-daily": {
         "task": "apps.knowledge_base.tasks.backup_database_task",
         "schedule": 86400,
+    },
+    "send-booking-reminders-daily": {
+        "task": "apps.knowledge_base.tasks.send_booking_reminders",
+        "schedule": crontab(hour=6, minute=0),  # 09:00 Moscow (UTC+3)
     },
 }
 
