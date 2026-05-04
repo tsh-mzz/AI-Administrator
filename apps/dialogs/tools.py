@@ -359,8 +359,8 @@ async def _create_local_booking(tool_input: dict, salon, conversation) -> dict:
     )
     valid_times = [s["datetime"] for s in available.get("slots", [])]
     requested_time = starts_at.strftime("%Y-%m-%dT%H:%M")
-    if valid_times and requested_time not in valid_times:
-        suggestions = ", ".join(valid_times[:5])
+    if not valid_times or requested_time not in valid_times:
+        suggestions = ", ".join(valid_times[:5]) if valid_times else "нет свободных слотов на этот день"
         return {
             "success": False,
             "error": f"Время {starts_at.strftime('%H:%M')} недоступно. Свободные слоты: {suggestions}. Предложи клиенту один из них.",
