@@ -1,4 +1,4 @@
-# Sm0rchki — AI Administrator
+# AI Administrator
 
 A Claude AI-powered bot (Telegram and beyond) that answers client questions and creates bookings in YCLIENTS 24/7. One instance — multiple salons.
 
